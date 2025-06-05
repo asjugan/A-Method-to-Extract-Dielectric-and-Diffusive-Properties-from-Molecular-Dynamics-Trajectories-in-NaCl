@@ -1,0 +1,94 @@
+# Initialization
+units real                    
+dimension 3
+boundary p p p
+atom_style charge
+
+# Define a custom lattice for NaCl with lattice constant 5.64
+lattice fcc 5.64
+
+# Create the simulation box and define two atom types (Na & Cl)
+region box block 0 6 0 6 0 6
+create_box 2 box
+
+# Create atoms for Na (type 1)
+lattice fcc 5.64 
+create_atoms 1 region box
+
+# Create atoms for Cl (type 2)
+lattice fcc 5.64 origin 0.5 0.0 0.0
+create_atoms 2 region box
+
+# Set the masses and charges for Na and Cl
+mass 1 22.989769  # Na mass
+mass 2 35.453     # Cl mass
+set type 1 charge +1.0  # Na charge
+set type 2 charge -1.0  # Cl charge
+
+# Define interatomic potential
+pair_style born/coul/long 10.0 # BMH potential with Coulombic interaction
+pair_coeff 1 1 6.0811 0.3169 2.340 24.1806 -11.5146
+pair_coeff 1 2 4.8649 0.3169 2.755 161.2044 -200.0688
+pair_coeff 2 2 3.6486 0.3169 3.17 1669.6172 -3353.6277  
+kspace_style ewald 1e-4
+
+# Neighbor settings
+neighbor 2.0 bin
+neigh_modify delay 5 every 1
+
+# Energy minimization to relax the structure
+fix 1 all box/relax iso 0.0
+min_style cg 
+minimize 1e-4 1e-4 1000 1000
+unfix 1
+
+# Reset Time Step (in femtoseconds)
+reset_timestep 0
+timestep 0.5
+
+# STEP 1: Initialize variables/velocities
+
+variable lattice_constant equal lx/6
+variable T equal temp
+variable PE equal pe
+variable KE equal ke
+variable E_total equal etotal
+variable P equal press
+variable V equal vol
+
+velocity all create 300 12345 mom yes rot yes dist gaussian # Initialize velocities at 300 K with a random seed
+
+# STEP 2: NPT relaxation -> obtain supercell dimensions to fix
+fix 2 all npt temp 300 300 100 iso 1.0 1.0 500
+
+# Time-average the dimensions (use values every 1 step, average over the last 1000 time steps, every 10000 time steps)
+fix avg_vol all ave/time 1 1000 10000 v_V file avg_vol300.txt
+variable V_avg equal f_avg_vol
+
+run 100000
+unfix 2
+
+# Compute the cube root of the averaged volume to get the effective side length of a cube
+variable L equal "(v_V_avg)^(1.0/3.0)"
+
+# Change the boundary scale -> fix supercell dimensions
+change_box all x final 0 ${L} y final 0 ${L} z final 0 ${L} units box
+unfix avg_vol
+
+# STEP 3: NVT relaxation -> obtain equilibrium
+fix 3 all nvt temp 300 300 100
+
+run 100000
+unfix 3
+
+# STEP 4: Simulation run
+fix 4 all nvt temp 300 300 100
+
+# STEP 5: Complete data collection
+dump dump_eq all custom 1 dump300.equilibrium.lammpstrj id type x y z
+
+# This is 25 picoseconds, should run for 50 minutes
+run 50000
+unfix 4
+
+undump dump_eq
