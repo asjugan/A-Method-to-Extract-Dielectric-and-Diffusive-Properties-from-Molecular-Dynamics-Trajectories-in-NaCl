@@ -1,0 +1,1 @@
+# A-Method-to-Extract-Dielectric-and-Diffusive-Properties-from-Molecular-Dynamics-Trajectories-in-NaCl
